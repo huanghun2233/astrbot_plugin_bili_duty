@@ -1,0 +1,132 @@
+{
+  "cli_path": {
+    "description": "bili 可执行文件路径。留空则自动在 PATH / %USERPROFILE%\\.local\\bin 里找。",
+    "type": "string",
+    "default": ""
+  },
+  "admin_ids": {
+    "description": "允许执行写操作（发评论）的 QQ 号。",
+    "type": "list",
+    "default": ["2056365224", "1738412297"]
+  },
+  "daily_enable": {
+    "description": "是否开启每日定时日报。",
+    "type": "bool",
+    "default": true
+  },
+  "daily_time": {
+    "description": "每日日报时间（HH:MM，24 小时制，本机时区）。",
+    "type": "string",
+    "default": "21:30"
+  },
+  "daily_count": {
+    "description": "每日日报最多挑几条视频。",
+    "type": "int",
+    "default": 3
+  },
+  "max_duration": {
+    "description": "候选视频最长时长（秒），超过的不挑。",
+    "type": "int",
+    "default": 2400
+  },
+  "min_duration": {
+    "description": "候选视频最短时长（秒），短于这个的不挑。",
+    "type": "int",
+    "default": 120
+  },
+  "keywords": {
+    "description": "搜索补量用的关键词（逗号分隔）。",
+    "type": "string",
+    "default": "AI,编程,数码"
+  },
+  "max_transcript_chars": {
+    "description": "每条视频送进日报的字幕上限。",
+    "type": "int",
+    "default": 4000
+  },
+  "allow_comment": {
+    "description": "是否允许管理员用「bili 评论」发评论（走 bili-cli guard 限流）。",
+    "type": "bool",
+    "default": false
+  },
+  "comment_dry_run": {
+    "description": "评论默认只预演不真发（--dry-run）。",
+    "type": "bool",
+    "default": true
+  },
+  "notify_error": {
+    "description": "定时任务失败时是否在目标会话里报错。",
+    "type": "bool",
+    "default": true
+  },
+  "api_enable": {
+    "description": "是否开启插件自带的 HTTP/WebSocket 端口（类似 AstrBot 给 SnowLuma 开的 6199）。",
+    "type": "bool",
+    "default": true
+  },
+  "api_host": {
+    "description": "API 监听地址，默认只给本机用。要局域网访问就填 0.0.0.0。",
+    "type": "string",
+    "default": "127.0.0.1"
+  },
+  "api_port": {
+    "description": "API 监听端口，默认 6198（避开 AstrBot 6185/6199 与 SnowLuma 52633-52635）。",
+    "type": "int",
+    "default": 6198
+  },
+  "api_token": {
+    "description": "API 访问令牌；留空表示只要在本机就能访问。填了就要求 Authorization: Bearer <token>。",
+    "type": "string",
+    "default": ""
+  },
+  "notify_session": {
+    "description": "API /notify 不传 session 时默认推送到哪个会话（如 qq-2056365224:GroupMessage:567845244）。",
+    "type": "string",
+    "default": ""
+  },
+  "presence_enable": {
+    "description": "常驻模式：盯着「@我的 / 回复我的」，被叫到就回一句（只做被动回应，不主动刷评论）。",
+    "type": "bool",
+    "default": true
+  },
+  "presence_dry_run": {
+    "description": "常驻默认只预览：把本来要发的话写进 presence.log，不真的发出去。改成 false 才实发。",
+    "type": "bool",
+    "default": true
+  },
+  "presence_interval": {
+    "description": "常驻轮询间隔（秒），最小 30。",
+    "type": "int",
+    "default": 90
+  },
+  "presence_max_per_hour": {
+    "description": "常驻每小时最多回几条，防止刷屏或被封。",
+    "type": "int",
+    "default": 6
+  },
+  "presence_max_age_hours": {
+    "description": "只回最近多少小时内的通知，更早的当作过期跳过。",
+    "type": "int",
+    "default": 12
+  },
+  "presence_types": {
+    "description": "监听哪些通知，逗号分隔：mentions（@我的）、replies（回复我的）。",
+    "type": "string",
+    "default": "mentions,replies"
+  },
+  "presence_mode": {
+    "description": "怎么生成回复：llm（用 AstrBot 当前模型现写）或 template（固定句式）。",
+    "type": "string",
+    "default": "llm"
+  },
+  "presence_template": {
+    "description": "template 模式用的句式，{name} 会被替换成对方昵称。",
+    "type": "string",
+    "default": "收到～"
+  },
+  "presence_notify_session": {
+    "description": "每次真的回了一条之后，顺带通知哪个会话（留空不通知）。",
+    "type": "string",
+    "default": ""
+  }
+}
