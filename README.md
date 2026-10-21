@@ -102,3 +102,15 @@ WebSocket 在 `ws://127.0.0.1:6198/ws`，握手会发 `{"type":"hello","plugin":
 ## License
 
 MIT
+
+## v0.4.0 · 主动评论 + 动态记忆
+
+- **主动评论**：值班挑到视频后，让模型先给视频打 1-10 的兴趣分，达到 `auto_comment_min_score`（默认 6）才写一句评论并到评论区发出去。
+  - `auto_comment_enable`：总开关，默认关。
+  - `auto_comment_dry_run`：默认开，只把评论写进活动日志，不真发；确认语气没问题后再关掉它。
+  - `auto_comment_daily`：每天最多几条（默认 2），同一条视频不会重复评。
+  - 走 `bili comment post`，因此受 bili-cli 的限流/审计约束。
+- **动态记忆**：插件把每次真实动作写进 `journal.jsonl`（评论 / 回复 / 日报 / 投稿），聊天时自动把最近几条注入系统提示词，群里问「你刚在 B 站干嘛了」能如实回答。
+  - `activity_prompt_items`：注入几条（0 = 关闭），`activity_prompt_hours`：只看最近多少小时。
+  - 群里也能直接问：`bili 动态 [条数]`。
+  - 模型另有 `bili_my_activity` 工具可主动查。

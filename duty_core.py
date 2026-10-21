@@ -164,7 +164,7 @@ class DutyEngine:
         if "search" in sources:
             for keyword in self.keywords:
                 try:
-                    data = await run_bili(self.cli, "search", "video", keyword, "--limit", "5", timeout=60)
+                    data = await run_bili(self.cli, "search", "video", keyword, "--size", "8", timeout=60)
                     items.extend(data.get("items") or [])
                 except BiliError as exc:
                     self._debug(f"[bili-duty] search {keyword} failed: {exc}")

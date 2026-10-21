@@ -39,16 +39,18 @@ from astrbot.core.star.filter.command import GreedyStr
 from .bili_engine import BiliError, resolve_cli, run_bili, version
 from .duty_api import ApiError, DutyApiServer
 from .duty_core import DutyEngine, StateStore, fmt_num, render_qq_message
+from .journal import ActivityJournal
 from .presence import PresenceWatcher
 
 PLUGIN_NAME = "astrbot_plugin_bili_duty"
-PLUGIN_VERSION = "0.3.0"
+PLUGIN_VERSION = "0.4.0"
 HELP_TEXT = (
     "【B站值班室】指令：\n"
     "bili 状态 — 引擎/登录/定时/API 自检\n"
     "bili 日报 [条数] — 立刻跑一轮值班\n"
     "bili 热门 [条数] — 综合热门榜\n"
     "bili 视频 <BV号> — 单条速览\n"
+    "bili 动态 [条数] — 我最近在 B 站做了什么（评论/回复/日报）\n"
     "bili 订阅 / bili 取消订阅 — 每日日报推送到本群\n"
     "bili 评论 <BV号> <内容> — 管理员，走 guard 限流\n"
     "bili api — 查看插件自己的 HTTP/WebSocket 端口\n"
@@ -151,6 +153,36 @@ class DailyDutyTool(FunctionTool):
         return await self._plugin.tool_daily_pick(int(kwargs.get("count") or 2))
 
 
+class ActivityTool(FunctionTool):
+    """让我（bot）知道自己最近在 B 站干了什么。"""
+
+    def __init__(self, plugin: "BiliDutyPlugin") -> None:
+        super().__init__(
+            name="bili_my_activity",
+            description=(
+                "查我自己最近在 B 站做过什么：发过哪些评论、回复过谁、跑过几次日报。"
+                "用户问“你在B站干了什么/你刚评论了啥/你回过谁”时调用。"
+                "参数 count 默认 5，最多 20。"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 20,
+                        "description": "看最近几条，默认 5。",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        )
+        self._plugin = plugin
+
+    async def call(self, context: Any, **kwargs: Any) -> str:
+        return self._plugin.activity_text(int(kwargs.get("count") or 5))
+
+
 @register(PLUGIN_NAME, "大肥鱼值班室", "B站值班：每日挑片日报、单条速览、热门榜，并自带 HTTP/WS API 端口", PLUGIN_VERSION)
 class BiliDutyPlugin(Star):
     def __init__(self, context: Context, config: dict[str, Any] | None = None) -> None:
@@ -167,6 +199,9 @@ class BiliDutyPlugin(Star):
         self._api: DutyApiServer | None = None
         self._presence: PresenceWatcher | None = None
         self._presence_task: asyncio.Task | None = None
+        self._journal: ActivityJournal | None = None
+        self._comment_lock = asyncio.Lock()
+        self._last_auto_comment: str = ""
 
     # ------------------------------------------------------------------ life
     async def initialize(self) -> None:
@@ -174,6 +209,8 @@ class BiliDutyPlugin(Star):
         self._cli = resolve_cli(str(cfg.get("cli_path") or "").strip())
         self._data_dir = StarTools.get_data_dir(PLUGIN_NAME)
         self._store = StateStore(self._data_dir)
+        self._journal = ActivityJournal(self._data_dir)
+        logger.info(f"[bili-duty] journal ready: {len(self._journal.entries)} 条历史")
 
         if self._cli:
             keywords = [k.strip() for k in str(cfg.get("keywords") or "").split(",") if k.strip()]
@@ -190,8 +227,12 @@ class BiliDutyPlugin(Star):
                 VideoDigestTool(self),
                 HotListTool(self),
                 DailyDutyTool(self),
+                ActivityTool(self),
             )
-            logger.info("[bili-duty] llm tools: bili_video_digest, bili_hot_videos, bili_daily_pick")
+            logger.info(
+                "[bili-duty] llm tools: bili_video_digest, bili_hot_videos, "
+                "bili_daily_pick, bili_my_activity"
+            )
         else:
             logger.warning("[bili-duty] 没找到 bili 可执行文件，日报/视频指令会不可用")
 
@@ -294,6 +335,7 @@ class BiliDutyPlugin(Star):
             logger=logger,
             log_path=(self._data_dir / "presence.log") if self._data_dir else None,
             notify=self._presence_notify if notify_session else None,
+            on_sent=self._on_presence_sent,
         )
         self._presence = watcher
         self._presence_task = asyncio.create_task(watcher.run(), name="bili-duty-presence")
@@ -320,6 +362,165 @@ class BiliDutyPlugin(Star):
         session = str(self._cfg().get("presence_notify_session") or "").strip()
         if session:
             await self._send_to_session(session, text)
+
+    # -------------------------------------------------------------- activity
+    async def _on_presence_sent(self, item: dict[str, Any], text: str) -> None:
+        """Record a real reply so the bot can talk about it later."""
+        journal = self._journal
+        if journal is None:
+            return
+        on = item.get("on") or {}
+        journal.add(
+            "reply",
+            text,
+            bvid=str(on.get("bvid") or ""),
+            title=str(on.get("title") or ""),
+            url=str(on.get("url") or ""),
+            extra={"to": str((item.get("user") or {}).get("name") or "")},
+        )
+
+    def activity_text(self, n: int = 5) -> str:
+        journal = self._journal
+        if journal is None:
+            return "活动日志还没初始化。"
+        return journal.render(max(1, min(20, int(n))))
+
+    def _note_daily(self, result: dict[str, Any]) -> None:
+        journal = self._journal
+        if journal is None:
+            return
+        videos = result.get("videos") or []
+        if not videos:
+            return
+        titles = "；".join(str(v.get("title") or v.get("bvid")) for v in videos[:3])
+        journal.add(
+            "daily",
+            f"挑了 {len(videos)} 条：{titles}",
+            extra={"date": result.get("date"), "path": result.get("path")},
+        )
+
+    async def _llm_text(self, prompt: str, system: str) -> str:
+        provider = None
+        try:
+            provider = self.context.get_using_provider()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"[bili-duty] get_using_provider failed: {exc}")
+        if provider is None:
+            return ""
+        resp = await provider.text_chat(
+            prompt=prompt, session_id="bili-duty-comment", system_prompt=system
+        )
+        return str(getattr(resp, "completion_text", "") or "").strip()
+
+    async def _comment_draft(self, video: dict[str, Any]) -> tuple[int, str]:
+        """Ask the model: is this interesting enough, and what would we say?"""
+        title = str(video.get("title") or "")
+        owner = str(video.get("owner") or "")
+        summary = str(video.get("ai_summary") or "").strip()
+        transcript = str(video.get("transcript") or "").strip()
+        tags = "、".join(str(t) for t in (video.get("tags") or [])[:6])
+        hot = video.get("hot_comments") or []
+        hot_text = " / ".join(
+            str(c.get("content") or c.get("text") or "")[:40] for c in hot[:3] if isinstance(c, dict)
+        )
+        prompt = (
+            f"视频标题：{title}\nUP主：{owner}\n标签：{tags}\n"
+            f"AI 摘要：{summary[:300]}\n字幕节选：{transcript[:600]}\n"
+            f"热评：{hot_text}\n\n"
+            "先判断这条视频对一个喜欢「{kw}」的观众有多值得留言（1-10 分）；"
+            "如果 >=6 分，写一条 15~40 字的评论：像真观众随口说的，可以接热评的梗，"
+            "不要剧透关键结论，不要艾特人，不要放链接，不要自我介绍，不要表情包。\n"
+            '只输出 JSON：{{"score": 7, "comment": "……"}}'
+        ).format(kw=str(self._cfg().get("keywords") or "AI、编程、数码"))
+        raw = await self._llm_text(
+            prompt,
+            "你是一个普通 B站 观众，正在刷视频。只输出 JSON，不要解释。",
+        )
+        if not raw:
+            return 0, ""
+        score = 0
+        comment = ""
+        try:
+            start = raw.find("{")
+            end = raw.rfind("}")
+            import json as _json
+
+            data = _json.loads(raw[start : end + 1]) if 0 <= start < end else {}
+            score = int(data.get("score") or 0)
+            comment = str(data.get("comment") or "").strip()
+        except (ValueError, TypeError):
+            logger.debug(f"[bili-duty] comment draft unparsable: {raw[:120]}")
+            return 0, ""
+        comment = comment.strip().strip('"').replace("\n", " ")
+        return max(0, min(10, score)), comment[:120]
+
+    async def _auto_comment(self, videos: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Comment on the picks the model finds interesting (guarded, capped)."""
+        cfg = self._cfg()
+        journal = self._journal
+        if journal is None or not videos:
+            return []
+        if not bool(cfg.get("auto_comment_enable", False)):
+            return []
+        per_day = max(1, int(cfg.get("auto_comment_daily") or 2))
+        min_score = max(1, min(10, int(cfg.get("auto_comment_min_score") or 6)))
+        dry = bool(cfg.get("auto_comment_dry_run", True))
+        posted: list[dict[str, Any]] = []
+        if self._comment_lock.locked():
+            return []
+        async with self._comment_lock:
+            for video in videos:
+                if journal.count_today("comment") >= per_day:
+                    break
+                bvid = str(video.get("bvid") or "")
+                if not bvid or journal.has_commented(bvid):
+                    continue
+                score, text = await self._comment_draft(video)
+                if score < min_score or not text:
+                    logger.info(f"[bili-duty] auto-comment skip {bvid} (score={score})")
+                    continue
+                data: dict[str, Any] = {"dry_run": dry}
+                if not dry:
+                    try:
+                        data = await run_bili(
+                            self._cli or "", "comment", "post", bvid, text,
+                            "--type", "video", timeout=90,
+                        )
+                    except BiliError as exc:
+                        logger.warning(f"[bili-duty] auto-comment {bvid} failed: {exc}")
+                        continue
+                journal.add(
+                    "comment",
+                    text,
+                    bvid=bvid,
+                    title=str(video.get("title") or ""),
+                    url=str(video.get("url") or ""),
+                    extra={"score": score, "dry_run": dry, "result": data},
+                )
+                posted.append({"bvid": bvid, "title": video.get("title"), "text": text, "score": score, "dry_run": dry})
+                logger.info(f"[bili-duty] auto-comment {bvid} score={score} dry_run={dry}: {text}")
+        return posted
+
+    @filter.on_llm_request()
+    async def inject_activity(self, event: AstrMessageEvent, req: Any) -> None:
+        """Keep the bot aware of what it did on Bilibili, on every chat turn."""
+        journal = self._journal
+        if journal is None or req is None:
+            return
+        items = int(self._cfg().get("activity_prompt_items") or 0)
+        if items <= 0:
+            return
+        try:
+            block = journal.prompt_block(
+                n=items,
+                max_age_hours=int(self._cfg().get("activity_prompt_hours") or 24),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"[bili-duty] activity block failed: {exc}")
+            return
+        if not block:
+            return
+        req.system_prompt = (req.system_prompt or "") + "\n\n" + block
 
     async def _api_presence(self, params: dict[str, Any]) -> dict[str, Any]:
         watcher = self._presence
@@ -530,7 +731,12 @@ class BiliDutyPlugin(Star):
         if self._duty_lock.locked():
             raise ApiError("busy", "上一轮值班还在跑，稍等几秒", status=429)
         async with self._duty_lock:
-            return await engine.daily(count, self._data_dir)
+            result = await engine.daily(count, self._data_dir)
+            self._note_daily(result)
+            commented = await self._auto_comment(result.get("videos") or [])
+            if commented:
+                result["commented"] = commented
+            return result
 
     async def _send_to_session(self, session: str, text: str) -> bool:
         """Push a plain-text message into any AstrBot session (umo string)."""
@@ -603,6 +809,11 @@ class BiliDutyPlugin(Star):
 
         if sub == "状态":
             await self._send(event, await self._status_text())
+            return
+
+        if sub in ("动态", "activity", "做了啥", "干了啥"):
+            n = _int_param({"count": rest}, "count", 5, 1, 20) if rest else 5
+            await self._send(event, self.activity_text(n))
             return
 
         if sub in ("api", "API", "端口"):
@@ -792,6 +1003,17 @@ class BiliDutyPlugin(Star):
             lines.append(f"日报会话：{len(self._store.sessions)} 个")
             last = self._store.last_run()
             lines.append(f"上次运行：{last or '还没跑过'}")
+        if self._journal is not None:
+            cfg = self._cfg()
+            auto = "开" if cfg.get("auto_comment_enable", False) else "关"
+            dry = "（预演）" if cfg.get("auto_comment_dry_run", True) else "（实发）"
+            lines.append(
+                f"主动评论：{auto}{dry} · 今天已评 {self._journal.count_today('comment')} 条 · "
+                f"上限 {cfg.get('auto_comment_daily') or 2}/天"
+            )
+            lines.append(
+                f"活动日志：{len(self._journal.entries)} 条（bili 动态 查看）"
+            )
         return "\n".join(lines)
 
     # ------------------------------------------------------------ daily runner

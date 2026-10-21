@@ -128,5 +128,35 @@
     "description": "每次真的回了一条之后，顺带通知哪个会话（留空不通知）。",
     "type": "string",
     "default": ""
+  },
+  "auto_comment_enable": {
+    "description": "主动评论：值班挑到感兴趣的视频时，主动去评论区留一两句（写完直接发，风险自负；建议先开着预演看几天）。",
+    "type": "bool",
+    "default": false
+  },
+  "auto_comment_dry_run": {
+    "description": "主动评论只预演：内容写进活动日志，不真的发到 B 站。",
+    "type": "bool",
+    "default": true
+  },
+  "auto_comment_daily": {
+    "description": "每天最多主动评论几条。",
+    "type": "int",
+    "default": 2
+  },
+  "auto_comment_min_score": {
+    "description": "兴趣分阈值（1-10）：模型给视频打分 >= 这个值才评论。",
+    "type": "int",
+    "default": 6
+  },
+  "activity_prompt_items": {
+    "description": "每次聊天时，把最近几条 B 站动态塞进系统提示词（0 = 关掉）。",
+    "type": "int",
+    "default": 6
+  },
+  "activity_prompt_hours": {
+    "description": "只注入最近多少小时内的动态。",
+    "type": "int",
+    "default": 24
   }
 }

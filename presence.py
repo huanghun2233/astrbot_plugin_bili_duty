@@ -50,6 +50,7 @@ class PresenceWatcher:
         logger: Any = None,
         log_path: Path | None = None,
         notify: Callable[[str], Awaitable[None]] | None = None,
+        on_sent: Callable[[dict[str, Any], str], Awaitable[None]] | None = None,
     ) -> None:
         self.cli = cli
         self.store = store
@@ -64,6 +65,7 @@ class PresenceWatcher:
         self.logger = logger
         self.log_path = log_path
         self.notify = notify
+        self.on_sent = on_sent
         self._running = False
         self.last_poll: str | None = None
         self.last_error: str | None = None
@@ -267,6 +269,12 @@ class PresenceWatcher:
                         await self.notify(f"B站回复了一条：{text}\n来源：{_brief(item).get('url')}")
                     except Exception:  # noqa: BLE001
                         pass
+                if self.on_sent is not None and detail == "sent":
+                    try:
+                        await self.on_sent(item, text)
+                    except Exception as exc:  # noqa: BLE001
+                        if self.logger:
+                            self.logger.debug(f"[presence] on_sent hook failed: {exc}")
             else:
                 if self.logger:
                     self.logger.warning(f"[presence] 回复失败：{detail}")

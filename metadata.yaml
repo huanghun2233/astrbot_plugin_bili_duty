@@ -1,9 +1,9 @@
 name: astrbot_plugin_bili_duty
 display_name: B站值班室
-desc: 用 bili-cli 引擎做 B 站值班：日报、单条速览、热门榜、常驻回复（有人 @ 我或回我就回一句）、状态自检，并自带 HTTP/WebSocket API 端口。
-short_desc: 把 dsh-bili-scroll 的"值班"机制 + bili-cli 的取数/护栏引擎搬进 AstrBot；既能在群里被叫，也能长驻 B 站被 @。
-help: 发送「bili 状态」自检；「bili 日报」「bili 热门」「bili 视频 BV号」「bili 订阅」「bili presence」见 README。
-version: 0.3.0
+desc: 用 bili-cli 引擎做 B 站值班：日报、单条速览、热门榜、常驻回复（有人 @ 我或回我就回一句）、主动评论（挑到感兴趣的视频就留一两句）、动态记忆（群里知道自己刚在 B 站干了啥），并自带 HTTP/WebSocket API 端口。
+short_desc: 把 dsh-bili-scroll 的"值班"机制 + bili-cli 的取数/护栏引擎搬进 AstrBot；能在群里被叫，也能长驻 B 站被 @、主动评论并记住自己做过什么。
+help: 发送「bili 状态」自检；「bili 动态」看最近在 B 站做了什么；其余见 README。
+version: 0.4.0
 astrbot_version: ">=4.26,<5"
 author: 大肥鱼值班室
 repo: https://github.com/huanghun2233/astrbot_plugin_bili_duty
